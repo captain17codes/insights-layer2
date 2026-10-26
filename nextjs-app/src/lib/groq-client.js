@@ -18,7 +18,7 @@ export async function generateBlueprint(query, ragContext) {
   const { systemPrompt, userPrompt } = buildBlueprintPrompt(query, ragContext);
 
   const completion = await groq.chat.completions.create({
-    model: 'llama-3.1-8b-instant',
+    model: (process.env.GROQ_MODEL || 'openai/gpt-oss-20b'),
     messages: [
       { role: 'system', content: systemPrompt },
       { role: 'user', content: userPrompt }
@@ -44,7 +44,7 @@ Tech stack: ${JSON.stringify(blueprintContext?.techStack || {})}.
 Be concise and actionable. Keep responses under 150 words.`;
 
   const completion = await groq.chat.completions.create({
-    model: 'llama-3.1-8b-instant',
+    model: (process.env.GROQ_MODEL || 'openai/gpt-oss-20b'),
     messages: [
       { role: 'system', content: systemPrompt },
       ...chatHistory.slice(-6),

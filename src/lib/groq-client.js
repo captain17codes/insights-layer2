@@ -14,6 +14,36 @@ function getClient() {
 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
+// Groq retired llama-3.1-8b-instant & llama-3.3-70b-versatile on 2026-08-16.
+// Override with GROQ_MODEL / GROQ_CHAT_MODEL env vars when Groq changes models again.
+const BLUEPRINT_MODELS = [process.env.GROQ_MODEL, 'openai/gpt-oss-20b', 'openai/gpt-oss-120b'].filter(Boolean);
+const CHAT_MODELS = [process.env.GROQ_CHAT_MODEL, process.env.GROQ_MODEL, 'openai/gpt-oss-20b', 'openai/gpt-oss-120b'].filter(Boolean);
+
+const isModelMissing = (err) =>
+  err?.status === 404 || err?.error?.error?.code === 'model_not_found' ||
+  /model_not_found|decommissioned|does not exist/i.test(err?.message || '');
+
+const isReasoningModel = (m) => m.startsWith('openai/gpt-oss') || m.startsWith('qwen/');
+
+// Calls Groq, falling through to the next model if one has been removed.
+async function createCompletion(groq, models, params) {
+  let lastErr;
+  for (const model of [...new Set(models)]) {
+    try {
+      const extra = isReasoningModel(model) ? { reasoning_effort: 'low' } : {};
+      return await groq.chat.completions.create({ ...params, ...extra, model });
+    } catch (err) {
+      lastErr = err;
+      if (isModelMissing(err)) {
+        console.warn(`[LLM] Model ${model} unavailable, trying next...`);
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw lastErr;
+}
+
 export async function generateBlueprint(query, ragContext) {
   const groq = getClient();
   const { buildBlueprintPrompt } = await import('./prompt-builder.js');
@@ -24,9 +54,8 @@ export async function generateBlueprint(query, ragContext) {
 
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
-      console.log(`[LLM] Calling Groq llama-3.1-8b-instant (attempt ${attempt + 1}/${retries + 1})...`);
-      const completion = await groq.chat.completions.create({
-        model: 'llama-3.1-8b-instant',
+      console.log(`[LLM] Calling Groq ${BLUEPRINT_MODELS[0]} (attempt ${attempt + 1}/${retries + 1})...`);
+      const completion = await createCompletion(groq, BLUEPRINT_MODELS, {
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt }
@@ -109,15 +138,14 @@ export async function generateMentorResponse(userMessage, blueprintContext, chat
 Tech stack: ${JSON.stringify(blueprintContext?.techStack || {})}.
 Be concise and actionable. Keep responses under 150 words.`;
 
-  const completion = await groq.chat.completions.create({
-    model: 'llama-3.1-8b-instant',
+  const completion = await createCompletion(groq, CHAT_MODELS, {
     messages: [
       { role: 'system', content: systemPrompt },
       ...chatHistory.slice(-6),
       { role: 'user', content: userMessage }
     ],
     temperature: 0.8,
-    max_tokens: 512
+    max_tokens: 1024 // gpt-oss reasoning tokens count toward this
   });
 
   return completion.choices[0]?.message?.content || 'Could not generate a response. Please try again.';
@@ -148,7 +176,7 @@ function validateAndNormalize(bp, query) {
       devops: bp.techStack?.devops || ['Docker', 'GitHub Actions'],
       external_apis: bp.techStack?.external_apis || []
     },
-    architectureMermaid: bp.architectureMermaid || \`graph TD\\n  A["Frontend"] --> B["Backend"]\\n  B --> C["Database"]\\n  style C fill:#e11d48,color:#fff\`,
+    architectureMermaid: bp.architectureMermaid || `graph TD\n  A["Frontend"] --> B["Backend"]\n  B --> C["Database"]\n  style C fill:#e11d48,color:#fff`,
     systemDesignDetails: bp.systemDesignDetails || {},
     stats: bp.stats || [{ val: '10M+', label: 'Potential users' }, { val: '3x', label: 'Faster than manual' }],
     warning: bp.warning || 'Manual approaches in this domain do not scale.',
@@ -160,7 +188,7 @@ function validateAndNormalize(bp, query) {
     ],
     deepSearchResults: bp.deepSearchResults || [],
     competitiveAnalysis: bp.competitiveAnalysis || [],
-    mentorChat: bp.mentorChat || [{ from: 'bot', text: \`🚀 Project "\${bp.title || query}" initialized!\` }],
+    mentorChat: bp.mentorChat || [{ from: 'bot', text: `🚀 Project "${bp.title || query}" initialized!` }],
     webIntel: bp.webIntel || [],
     literatureReview: bp.literatureReview || [],
     innovationOpportunities: bp.innovationOpportunities || [],

@@ -31,7 +31,7 @@ async function generateBlueprint(query, ragContext) {
 
   try {
     const completion = await groq.chat.completions.create({
-      model: 'llama-3.1-8b-instant',
+      model: (process.env.GROQ_MODEL || 'openai/gpt-oss-20b'),
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt }
@@ -84,7 +84,7 @@ If asked about code, provide short, working snippets. Keep responses under 200 w
   ];
 
   const completion = await groq.chat.completions.create({
-    model: 'llama-3.1-8b-instant', // Use faster model for chat
+    model: (process.env.GROQ_MODEL || 'openai/gpt-oss-20b'), // Use faster model for chat
     messages,
     temperature: 0.8,
     max_tokens: 512
