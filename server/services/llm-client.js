@@ -23,7 +23,7 @@ async function callGroqAPI(systemPrompt, userPrompt, retries = 2) {
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
       const completion = await groq.chat.completions.create({
-        model: 'llama-3.3-70b-versatile',
+        model: (process.env.GROQ_MODEL || 'openai/gpt-oss-120b'),
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt }
@@ -119,7 +119,7 @@ If asked about code, provide short, working snippets. Keep responses under 200 w
   const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
   try {
     const completion = await groq.chat.completions.create({
-      model: 'llama-3.3-70b-versatile',
+      model: (process.env.GROQ_MODEL || 'openai/gpt-oss-120b'),
       messages,
       temperature: 0.8,
       max_tokens: 512
